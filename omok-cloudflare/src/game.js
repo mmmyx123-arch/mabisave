@@ -1,4 +1,5 @@
 import {matchMessage} from './match.js';
+const SERVER_EPOCH='r20260918b';
 export const emptyState = () => ({players:[],board:Array(225).fill(0),turn:0,status:'waiting',winner:null,rematch:[],lastMove:null,starter:0,black:0,rule:'renju',turnStartedAt:null,turnSeconds:20,endReason:null});
 export class GameRoom {
  constructor(ctx,env){this.ctx=ctx;this.env=env;this.state=emptyState();this.tokens={};ctx.blockConcurrencyWhile(async()=>{const saved=await ctx.storage.get('game');if(saved){this.state=saved.state;this.tokens=saved.tokens;}});}
@@ -122,7 +123,7 @@ export class GameRoom {
   return {legal:true,win:false};
  }
  win(i,v){return this.fiveOrMore(i,v);}
- async updateLobby(){try{const code=this.roomCode;if(!this.env?.GAME_ROOM||!code)return;const hub=this.env.GAME_ROOM.get(this.env.GAME_ROOM.idFromName('__quick_match_v1__'));await hub.fetch(new Request('https://internal/lobby-update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,players:this.state.players.length,status:this.state.status,remove:this.state.players.length===0})}));}catch{}}
+ async updateLobby(){try{const code=this.roomCode;if(!this.env?.GAME_ROOM||!code)return;const hub=this.env.GAME_ROOM.get(this.env.GAME_ROOM.idFromName(SERVER_EPOCH+':__quick_match_v1__'));await hub.fetch(new Request('https://internal/lobby-update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,players:this.state.players.length,status:this.state.status,remove:this.state.players.length===0})}));}catch{}}
  async sendLobby(ws){try{let rooms=await this.ctx.storage.get('rooms')||{};const list=Object.values(rooms).filter(r=>Date.now()-r.at<7200000&&r.players<2);ws.send(JSON.stringify({type:'lobby',online:this.sockets().filter(s=>s.deserializeAttachment()?.kind==='lobby').length,rooms:list}));}catch{}}
  async broadcastLobby(rooms){const list=Object.values(rooms).filter(r=>Date.now()-r.at<7200000&&r.players<2),msg=JSON.stringify({type:'lobby',online:this.sockets().filter(s=>s.deserializeAttachment()?.kind==='lobby').length,rooms:list});for(const s of this.sockets())if(s.deserializeAttachment()?.kind==='lobby')try{s.send(msg)}catch{}}
  async webSocketClose(ws){if(ws.deserializeAttachment()?.kind==='lobby'){ws.serializeAttachment({kind:'lobby',closed:true});const rooms=await this.ctx.storage.get('rooms')||{};this.broadcastLobby(rooms);return;}if(ws.deserializeAttachment()?.kind==='match'){ws.serializeAttachment({kind:'match',queued:false});return;}ws.serializeAttachment({id:null});this.broadcast();}
