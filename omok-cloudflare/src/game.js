@@ -16,7 +16,7 @@ export class GameRoom {
   }
   if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
   const matchmaking=path==='/match',lobby=path==='/lobby';if(path.startsWith('/room/'))this.roomCode=path.slice(6).toUpperCase();
-  if(this.sockets().length>=(matchmaking?500:8))return new Response('Too many connections',{status:429});
+  if(this.sockets().length>=((matchmaking||lobby)?500:8))return new Response('Too many connections',{status:429});
   const pair=new WebSocketPair();this.ctx.acceptWebSocket(pair[1]);pair[1].serializeAttachment({id:null,at:Date.now(),count:0,kind:lobby?'lobby':matchmaking?'match':'game'});if(lobby)setTimeout(()=>this.sendLobby(pair[1]),0);
   return new Response(null,{status:101,webSocket:pair[0]});
  }
