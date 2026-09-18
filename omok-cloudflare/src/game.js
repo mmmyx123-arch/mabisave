@@ -1,5 +1,5 @@
 import {matchMessage} from './match.js';
-export const emptyState = () => ({players:[],board:Array(225).fill(0),turn:0,status:'waiting',winner:null,rematch:[],lastMove:null,starter:0,black:0,rule:'renju'});
+export const emptyState = () => ({players:[],board:Array(225).fill(0),turn:0,status:'waiting',winner:null,rematch:[],lastMove:null,starter:0,black:0,rule:'renju',turnStartedAt:null,turnSeconds:20,endReason:null});
 export class GameRoom {
  constructor(ctx,env){this.ctx=ctx;this.env=env;this.state=emptyState();this.tokens={};ctx.blockConcurrencyWhile(async()=>{const saved=await ctx.storage.get('game');if(saved){this.state=saved.state;this.tokens=saved.tokens;}});}
  sockets(){return this.ctx.getWebSockets();}
@@ -39,7 +39,7 @@ export class GameRoom {
    }
    for(const old of this.sockets())if(old!==ws&&old.deserializeAttachment()?.id===p.id){old.serializeAttachment({id:null});old.close(4001,'다른 창에서 접속했습니다.');}
    a.id=p.id;ws.serializeAttachment(a);
-   if(this.state.players.length===2&&this.state.status==='waiting'){this.state.status='playing';this.state.black=this.state.black??0;this.state.starter=this.state.black;this.state.turn=this.state.black;}
+   if(this.state.players.length===2&&this.state.status==='waiting'){this.state.status='playing';this.state.black=this.state.black??0;this.state.starter=this.state.black;this.state.turn=this.state.black;this.state.turnStartedAt=Date.now();this.state.endReason=null;}else if(this.state.status==='playing'&&!this.state.turnStartedAt){this.state.turnStartedAt=Date.now();}
    await this.save();ws.send(JSON.stringify({type:'identity',id:p.id}));this.broadcast();this.updateLobby();return;
   }
   const pi=this.state.players.findIndex(p=>p.id===a.id);if(pi<0)return this.error(ws,'먼저 입장해 주세요.');
@@ -52,16 +52,30 @@ export class GameRoom {
    if(pi===black){
     const result=this.blackResult(i,pi+1);
     if(!result.legal){this.state.board[i]=0;this.state.lastMove=null;return this.error(ws,'금수: '+result.reason);}
-    if(result.win){this.state.status='won';this.state.winner=a.id;}
-    else if(this.state.board.every(Boolean))this.state.status='draw';else this.state.turn=1-pi;
+    if(result.win){this.state.status='won';this.state.winner=a.id;this.state.turnStartedAt=null;this.state.endReason='five';}
+    else if(this.state.board.every(Boolean)){this.state.status='draw';this.state.turnStartedAt=null;}else{this.state.turn=1-pi;this.state.turnStartedAt=Date.now();}
    }else{
-    if(this.fiveOrMore(i,pi+1)){this.state.status='won';this.state.winner=a.id;}
-    else if(this.state.board.every(Boolean))this.state.status='draw';else this.state.turn=1-pi;
+    if(this.fiveOrMore(i,pi+1)){this.state.status='won';this.state.winner=a.id;this.state.turnStartedAt=null;this.state.endReason='five';}
+    else if(this.state.board.every(Boolean)){this.state.status='draw';this.state.turnStartedAt=null;}else{this.state.turn=1-pi;this.state.turnStartedAt=Date.now();}
    }
+  }else if(m.type==='timeout'){
+   if(this.state.status!=='playing'||this.state.players.length!==2||!this.state.turnStartedAt)return;
+   if(Date.now()-this.state.turnStartedAt<20000)return;
+   const loser=this.state.players[this.state.turn],winner=this.state.players[1-this.state.turn];
+   if(!loser||!winner)return;
+   this.state.status='won';this.state.winner=winner.id;this.state.endReason='timeout';this.state.turnStartedAt=null;
+  }else if(m.type==='emote'){
+   const allowed=['메롱','허접ㅋ','한번만 봐줘','잘하네요','한판더?'];
+   if(!allowed.includes(m.text))return;
+   const now=Date.now();if(a.emoteAt&&now-a.emoteAt<900)return;
+   a.emoteAt=now;ws.serializeAttachment(a);
+   const out=JSON.stringify({type:'emote',from:a.id,text:m.text});
+   for(const s of this.sockets())if(s.deserializeAttachment()?.id)try{s.send(out)}catch{}
+   return;
   }else if(m.type==='rematch'){
    if(!['won','draw'].includes(this.state.status))return;
    if(!this.state.rematch.includes(a.id))this.state.rematch.push(a.id);
-   if(this.state.rematch.length===2){const players=this.state.players;const black=1-(this.state.black??0);this.state={...emptyState(),players,black,starter:black,turn:black,status:'playing'};}
+   if(this.state.rematch.length===2){const players=this.state.players;const black=1-(this.state.black??0);this.state={...emptyState(),players,black,starter:black,turn:black,status:'playing',turnStartedAt:Date.now()};}
   }else if(m.type==='leave'){
    const id=a.id;this.state.players=this.state.players.filter(p=>p.id!==id);delete this.tokens[id];this.state={...emptyState(),players:this.state.players};ws.serializeAttachment({id:null});ws.close(1000,'퇴장');
   }else return;
@@ -113,5 +127,5 @@ export class GameRoom {
  async broadcastLobby(rooms){const list=Object.values(rooms).filter(r=>Date.now()-r.at<7200000&&r.players<2),msg=JSON.stringify({type:'lobby',online:this.sockets().filter(s=>s.deserializeAttachment()?.kind==='lobby').length,rooms:list});for(const s of this.sockets())if(s.deserializeAttachment()?.kind==='lobby')try{s.send(msg)}catch{}}
  async webSocketClose(ws){if(ws.deserializeAttachment()?.kind==='lobby'){ws.serializeAttachment({kind:'lobby',closed:true});const rooms=await this.ctx.storage.get('rooms')||{};this.broadcastLobby(rooms);return;}if(ws.deserializeAttachment()?.kind==='match'){ws.serializeAttachment({kind:'match',queued:false});return;}ws.serializeAttachment({id:null});this.broadcast();}
  async webSocketError(ws){if(ws.deserializeAttachment()?.kind==='match'){ws.serializeAttachment({kind:'match',queued:false});try{ws.close(1011,'연결 오류');}catch{}return;}ws.serializeAttachment({id:null});try{ws.close(1011,'연결 오류');}catch{}this.broadcast();}
- broadcast(){const state={...this.state,players:this.state.players.map(p=>({...p,online:this.online(p.id)}))};const msg=JSON.stringify({type:'state',state});for(const ws of this.sockets())if(ws.deserializeAttachment()?.id)try{ws.send(msg);}catch{}}
+ broadcast(){const state={...this.state,players:this.state.players.map(p=>({...p,online:this.online(p.id)}))};const msg=JSON.stringify({type:'state',state,serverNow:Date.now()});for(const ws of this.sockets())if(ws.deserializeAttachment()?.id)try{ws.send(msg);}catch{}}
 }
