@@ -1,3 +1,4 @@
+import {matchMessage} from './match.js';
 export const emptyState = () => ({players:[],board:Array(225).fill(0),turn:0,status:'waiting',winner:null,rematch:[],lastMove:null,starter:0});
 export class GameRoom {
  constructor(ctx){this.ctx=ctx;this.state=emptyState();this.tokens={};ctx.blockConcurrencyWhile(async()=>{const saved=await ctx.storage.get('game');if(saved){this.state=saved.state;this.tokens=saved.tokens;}});}
@@ -7,8 +8,9 @@ export class GameRoom {
  error(ws,message,fatal=false){ws.send(JSON.stringify({type:'error',message,fatal}));if(fatal)ws.close(1008,message);}
  async fetch(request){
   if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
-  if(this.sockets().length>=8)return new Response('Too many connections',{status:429});
-  const pair=new WebSocketPair();this.ctx.acceptWebSocket(pair[1]);pair[1].serializeAttachment({id:null,at:Date.now(),count:0});
+  const matchmaking=new URL(request.url).pathname==='/match';
+  if(this.sockets().length>=(matchmaking?500:8))return new Response('Too many connections',{status:429});
+  const pair=new WebSocketPair();this.ctx.acceptWebSocket(pair[1]);pair[1].serializeAttachment({id:null,at:Date.now(),count:0,kind:matchmaking?'match':'game'});
   return new Response(null,{status:101,webSocket:pair[0]});
  }
  async webSocketMessage(ws,data){
@@ -17,6 +19,7 @@ export class GameRoom {
   if(!m||typeof m!=='object')return;
   let a=ws.deserializeAttachment()||{id:null,at:Date.now(),count:0};
   if(Date.now()-a.at>1000){a.at=Date.now();a.count=0;}a.count++;ws.serializeAttachment(a);if(a.count>20)return this.error(ws,'요청이 너무 빠릅니다.');
+  if(a.kind==='match')return matchMessage(this,ws,m);
   if(m.type==='join'){
    if(a.id)return;
    if(typeof m.token!=='string'||! /^[a-f0-9-]{36}$/.test(m.token))return this.error(ws,'접속 정보가 잘못되었습니다.',true);
@@ -48,7 +51,7 @@ export class GameRoom {
   await this.save();this.broadcast();
  }
  win(i,v){const r=Math.floor(i/15),c=i%15;for(const [dr,dc] of [[1,0],[0,1],[1,1],[1,-1]]){let n=1;for(const s of [-1,1]){let rr=r+dr*s,cc=c+dc*s;while(rr>=0&&rr<15&&cc>=0&&cc<15&&this.state.board[rr*15+cc]===v){n++;rr+=dr*s;cc+=dc*s;}}if(n>=5)return true;}return false;}
- async webSocketClose(ws){ws.serializeAttachment({id:null});this.broadcast();}
- async webSocketError(ws){ws.serializeAttachment({id:null});try{ws.close(1011,'연결 오류');}catch{}this.broadcast();}
+ async webSocketClose(ws){if(ws.deserializeAttachment()?.kind==='match'){ws.serializeAttachment({kind:'match',queued:false});return;}ws.serializeAttachment({id:null});this.broadcast();}
+ async webSocketError(ws){if(ws.deserializeAttachment()?.kind==='match'){ws.serializeAttachment({kind:'match',queued:false});try{ws.close(1011,'연결 오류');}catch{}return;}ws.serializeAttachment({id:null});try{ws.close(1011,'연결 오류');}catch{}this.broadcast();}
  broadcast(){const state={...this.state,players:this.state.players.map(p=>({...p,online:this.online(p.id)}))};const msg=JSON.stringify({type:'state',state});for(const ws of this.sockets())if(ws.deserializeAttachment()?.id)try{ws.send(msg);}catch{}}
 }
