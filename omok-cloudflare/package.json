@@ -1,1 +1,15 @@
-{"name":"dunbarton-omok","private":true,"version":"2.4.0","scripts":{"deploy":"wrangler deploy"},"devDependencies":{"wrangler":"^4.0.0"}}
+{
+  "name": "dunbarton-omok",
+  "private": true,
+  "version": "2.6.0",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "4.134.0"
+  },
+  "type": "module"
+}

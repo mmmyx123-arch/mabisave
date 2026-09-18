@@ -1,34 +1,26 @@
-name: Deploy Dunbarton Omok V2.4
+name: Validate Dunbarton Omok
 on:
   push:
-    paths: ['dunbarton_omok_online_v2_4_existing_do.zip']
+    branches: [main]
+    paths: ['omok-cloudflare/**', '.github/workflows/unzip-omok.yml']
+  pull_request:
+    paths: ['omok-cloudflare/**', '.github/workflows/unzip-omok.yml']
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  unpack:
+  validate:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: omok-cloudflare
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack V2.4
-        run: |
-          rm -rf .omok_unpack
-          mkdir .omok_unpack
-          unzip -o dunbarton_omok_online_v2_4_existing_do.zip -d .omok_unpack
-          test -f .omok_unpack/package.json
-          test -f .omok_unpack/wrangler.jsonc
-          test -f .omok_unpack/src/worker.js
-          rm -rf omok-cloudflare
-          mkdir -p omok-cloudflare/src
-          cp .omok_unpack/package.json omok-cloudflare/package.json
-          cp .omok_unpack/wrangler.jsonc omok-cloudflare/wrangler.jsonc
-          cp .omok_unpack/src/worker.js omok-cloudflare/src/worker.js
-          rm -rf .omok_unpack
-      - name: Commit V2.4
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add omok-cloudflare
-          git diff --cached --quiet && exit 0
-          git commit -m "Deploy Dunbarton Omok V2.4 existing Durable Object"
-          git push
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: omok-cloudflare/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
