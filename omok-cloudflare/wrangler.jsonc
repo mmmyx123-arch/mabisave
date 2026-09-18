@@ -1,14 +1,1 @@
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "dunbarton-omok",
-  "main": "src/worker.js",
-  "compatibility_date": "2026-09-18",
-  "durable_objects": {
-    "bindings": [
-      { "name": "GAME_ROOM", "class_name": "GameRoom" }
-    ]
-  },
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] }
-  ]
-}
+{"$schema":"node_modules/wrangler/config-schema.json","name":"dunbarton-omok","main":"src/worker.js","compatibility_date":"2026-09-18","durable_objects":{"bindings":[{"name":"GAME_ROOM","class_name":"GameRoom"}]},"migrations":[{"tag":"v2","new_sqlite_classes":["GameRoom"]}]}
