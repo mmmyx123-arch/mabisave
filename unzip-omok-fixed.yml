@@ -1,0 +1,48 @@
+name: Unpack Dunbarton Omok
+
+on:
+  push:
+    paths:
+      - 'dunbarton-omok-cloudflare.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Omok server
+        run: |
+          rm -rf .omok_unpack
+          mkdir -p .omok_unpack
+          unzip -o dunbarton-omok-cloudflare.zip -d .omok_unpack
+
+          ROOT=".omok_unpack/dunbarton-omok-cloudflare"
+
+          test -f "$ROOT/package.json"
+          test -f "$ROOT/wrangler.jsonc"
+          test -f "$ROOT/src/worker.js"
+
+          rm -rf omok-cloudflare
+          mkdir -p omok-cloudflare/src
+          cp "$ROOT/package.json" omok-cloudflare/package.json
+          cp "$ROOT/wrangler.jsonc" omok-cloudflare/wrangler.jsonc
+          cp "$ROOT/src/worker.js" omok-cloudflare/src/worker.js
+          rm -rf .omok_unpack
+
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add omok-cloudflare
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Auto unpack Dunbarton Omok Cloudflare server"
+          git push
