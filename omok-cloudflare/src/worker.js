@@ -1,9 +1,11 @@
 import {HTML} from './page.js';
 import {FACE_IMAGES} from './faces.js';
+import {LOBBY_ART_B64} from './lobby-art.js';
 export {GameRoom} from './game.js';
 export default {async fetch(request,env){
  const u=new URL(request.url);
  if(request.method!=='GET')return new Response('Method not allowed',{status:405});
+ if(u.pathname==='/lobby-art.webp')return new Response(Uint8Array.from(atob(LOBBY_ART_B64),c=>c.charCodeAt(0)),{headers:{'content-type':'image/webp','cache-control':'public,max-age=86400'}});
  if(FACE_IMAGES[u.pathname])return new Response(Uint8Array.from(atob(FACE_IMAGES[u.pathname]),c=>c.charCodeAt(0)),{headers:{'content-type':'image/jpeg','cache-control':'public,max-age=86400'}});
  if(u.pathname==='/health')return Response.json({ok:true,version:'2.7.0'});
  if(u.pathname==='/match'||u.pathname==='/lobby'){
